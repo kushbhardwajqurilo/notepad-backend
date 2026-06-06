@@ -1,0 +1,50 @@
+title log table height large
+color code table height large
+Ingredients table height not fixed as compare table 
+
+
+category 
+
+  (I)  category name shorted not working (remove shorting)
+  (II) filter icon come first number
+
+subcategory
+  
+  (I)  subcategory search boy girl come
+  (II) 
+
+title log
+
+  (I) filter not close
+  (II) table animation come 2 time
+  (III) shorting icons  not mentions
+
+content log
+
+  (I) shorting icons  not mentions 
+  (II)content log filter not come 
+  (III) prompt name not come
+
+Experiments
+
+(I) filter not close 
+(II) edit the data click input field they can redirect the experiments template
+
+color code 
+
+ (I) filter not come 
+ (II) add color code modal not change 
+ (III) searching not working 
+
+Ingredients
+
+(I) table data width not fill properly last Colm come white space
+(II) click the update data all input field save button come
+(III) delete not data 
+_________________________ Common _______________________
+
+icon not number wise (khi be koi be icon he )
+outside the click modal not closed
+some trigger the button testify not come
+side bar dropdown not fixed full height icon 
+bread crumb click go to category page  
