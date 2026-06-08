@@ -20,6 +20,7 @@ const {
   deleteIP,
   activeDeactiveAllIPs,
   IPGlobaleStatus,
+  SingleIPBlockUnblock,
 } = require("../controller/admin/adminController");
 const { IPAccessMiddleware } = require("../middleware/IpAccessMiddleware");
 
@@ -35,10 +36,11 @@ AdminRoute.get("/getallnote", adminGetAllUserNote);
 AdminRoute.delete("/deleteuser/:id", delteUser);
 AdminRoute.get("/alluser", getAllUserChatNameManager);
 AdminRoute.get("/allmessages/:receiver", getAllMessagesManager);
-AdminRoute.post("/add-ip", addIp);
-AdminRoute.get("/ip", getAllIP);
-AdminRoute.delete("/ip", deleteIP);
+AdminRoute.post("/block-ip", addIp);
+AdminRoute.get("/blocked-ips", getAllIP);
+AdminRoute.delete("/blocked-ip/:id", deleteIP);
 AdminRoute.post("/toggle-security", activeDeactiveAllIPs);
 AdminRoute.get("/security-status", IPGlobaleStatus);
+AdminRoute.put("/blocked-ip/:id", SingleIPBlockUnblock);
 
 module.exports = AdminRoute;

@@ -43,7 +43,7 @@ exports.addIp = async (req, res) => {
 // get all IP's
 exports.getAllIP = async (req, res) => {
   try {
-    const IPs = await IpBlockModel.find({});
+    const IPs = await IpBlockModel.find({}).sort({ createdAt: -1 }).lean();
     if (!IPs) {
       return res.status(200).json({
         status: "success",
@@ -53,8 +53,9 @@ exports.getAllIP = async (req, res) => {
     }
     const filterIP = IPs.map((ip) => ({
       _id: ip?._id,
-      ip: ip.ip,
-      isActive: ip.isActive,
+      ip: ip?.ip,
+      isActive: ip?.isActive,
+      createdAt: ip?.createdAt,
     }));
     return res.status(200).json({
       status: "success",
@@ -73,7 +74,9 @@ exports.getAllIP = async (req, res) => {
 // delete ip
 exports.deleteIP = async (req, res) => {
   try {
-    const { id } = req?.query || req?.params;
+    const { id } = req?.params;
+
+    console.log("ip id", id);
     if (!id) {
       return res.status(400).json({
         status: "failed",
@@ -123,11 +126,58 @@ exports.activeDeactiveAllIPs = async (req, res, next) => {
   }
 };
 exports.IPGlobaleStatus = async (req, res, next) => {
-  const AllIp = await IpBlockModel.find({}, "isActive");
-  const isActive = AllIp.every((val) => val?.isActive === false);
-  return res.status(201).json({
-    status: "success",
-    message: "",
-    data: { isGlobalBlocked: isActive },
-  });
+  try {
+    const AllIp = await IpBlockModel.find({}, "isActive");
+    if (!AllIp) {
+      return res.status(201).json({
+        status: "success",
+        message: "",
+        data: { isGlobalBlocked: null },
+      });
+    }
+    const isActive = AllIp.every((val) => val?.isActive === false);
+    return res.status(201).json({
+      status: "success",
+      message: "",
+      data: { isGlobalBlocked: isActive },
+    });
+  } catch (err) {
+    return res.status(500).json({
+      status: "failed",
+      message: "something went wrong",
+    });
+  }
+};
+
+// single ip blocked or unblocked
+exports.SingleIPBlockUnblock = async (req, res, next) => {
+  try {
+    const { id } = req?.params;
+    const { isActive } = req?.body;
+    if (!id) {
+      return res.status(400).json({
+        status: false,
+        message: "IP Id missing",
+      });
+    }
+    const result = await IpBlockModel.updateOne(
+      { _id: id },
+      { $set: { isActive: isActive } },
+    );
+    if (result?.modifiedCount === 0) {
+      return res.status(400).json({
+        status: "failed",
+        message: "Process Failed Try Again",
+      });
+    }
+    return res.status(201).json({
+      status: "success",
+      message: isActive ? "IP Blocked" : "IP Activated",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: "failed",
+      message: "something went wrong",
+    });
+  }
 };
