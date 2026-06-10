@@ -3,6 +3,7 @@ const cors = require("cors");
 const UserRoute = require("./src/route/user");
 const AdminRoute = require("./src/route/admin");
 const BackupRoute = require("./src/route/backup");
+const path = require("path");
 const { IPAccessMiddleware } = require("./src/middleware/IpAccessMiddleware");
 
 const app = express();
@@ -18,7 +19,10 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-
+app.use(
+  "/attachments",
+  express.static(path.join(process.cwd(), "public", "attachments")),
+);
 app.use("/public", express.static("public"));
 require("dotenv").config();
 

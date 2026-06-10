@@ -49,18 +49,20 @@ const isValidUserId = (value) =>
   Boolean(value) && mongoose.Types.ObjectId.isValid(normalizeId(value));
 
 const normalizePath = (value) =>
-  typeof value === "string" && value.trim()
-    ? value.replace(/\\/g, "/")
-    : null;
+  typeof value === "string" && value.trim() ? value.replace(/\\/g, "/") : null;
 
 const getMessageDate = (message) =>
   message?.createdAt || message?.timestamp || message?.updatedAt || new Date();
 
-const isUserOnline = (userId) => (onlineUsers.get(normalizeId(userId)) || 0) > 0;
+const isUserOnline = (userId) =>
+  (onlineUsers.get(normalizeId(userId)) || 0) > 0;
 
 const markUserOnline = (userId) => {
   const normalizedUserId = normalizeId(userId);
-  onlineUsers.set(normalizedUserId, (onlineUsers.get(normalizedUserId) || 0) + 1);
+  onlineUsers.set(
+    normalizedUserId,
+    (onlineUsers.get(normalizedUserId) || 0) + 1,
+  );
 };
 
 const markUserOffline = (userId) => {
@@ -114,8 +116,12 @@ const formatConversationItem = ({
 };
 
 const formatMessage = (message) => {
-  const from = normalizeId(message?.from || message?.senderId || message?.sender);
-  const to = normalizeId(message?.to || message?.receiverId || message?.receiver);
+  const from = normalizeId(
+    message?.from || message?.senderId || message?.sender,
+  );
+  const to = normalizeId(
+    message?.to || message?.receiverId || message?.receiver,
+  );
   const createdAt = getMessageDate(message);
 
   return {
@@ -130,60 +136,104 @@ const formatMessage = (message) => {
 };
 
 const saveSocketAttachment = async (selectedFile, filePath) => {
-  const normalizedFilePath = normalizePath(filePath);
-  if (normalizedFilePath) {
-    return normalizedFilePath;
-  }
+  try {
+    const normalizedFilePath = normalizePath(filePath);
 
-  if (!selectedFile) {
-    return null;
-  }
+    console.log("socket file =>", {
+      filePath,
+      normalizedFilePath,
+      hasBuffer: Buffer.isBuffer(selectedFile),
+      selectedFileType: typeof selectedFile,
+    });
 
-  let buffer = null;
-  const candidateBuffer = selectedFile?.buffer || selectedFile?.data || selectedFile;
+    // Existing uploaded file path
+    if (
+      normalizedFilePath &&
+      (normalizedFilePath.startsWith("attachments/") ||
+        normalizedFilePath.startsWith("uploads/"))
+    ) {
+      console.log("Using existing file path:", normalizedFilePath);
+      return normalizedFilePath;
+    }
 
-  if (Buffer.isBuffer(candidateBuffer)) {
-    buffer = candidateBuffer;
-  } else if (candidateBuffer instanceof ArrayBuffer) {
-    buffer = Buffer.from(candidateBuffer);
-  } else if (ArrayBuffer.isView(candidateBuffer)) {
-    buffer = Buffer.from(
-      candidateBuffer.buffer,
-      candidateBuffer.byteOffset,
-      candidateBuffer.byteLength,
-    );
-  } else if (typeof candidateBuffer === "string") {
-    const rawValue = candidateBuffer.includes("base64,")
-      ? candidateBuffer.split("base64,").pop()
-      : candidateBuffer;
+    if (!selectedFile) {
+      return normalizedFilePath || null;
+    }
 
-    try {
-      buffer = Buffer.from(rawValue, "base64");
-      if (!buffer.length) {
+    let buffer = null;
+
+    const candidateBuffer =
+      selectedFile?.buffer || selectedFile?.data || selectedFile;
+
+    if (Buffer.isBuffer(candidateBuffer)) {
+      buffer = candidateBuffer;
+    } else if (candidateBuffer instanceof ArrayBuffer) {
+      buffer = Buffer.from(candidateBuffer);
+    } else if (ArrayBuffer.isView(candidateBuffer)) {
+      buffer = Buffer.from(
+        candidateBuffer.buffer,
+        candidateBuffer.byteOffset,
+        candidateBuffer.byteLength,
+      );
+    } else if (typeof candidateBuffer === "string") {
+      const rawValue = candidateBuffer.includes("base64,")
+        ? candidateBuffer.split("base64,").pop()
+        : candidateBuffer;
+
+      try {
+        const tempBuffer = Buffer.from(rawValue, "base64");
+
+        if (tempBuffer.length > 0) {
+          buffer = tempBuffer;
+        } else {
+          buffer = Buffer.from(candidateBuffer);
+        }
+      } catch (err) {
         buffer = Buffer.from(candidateBuffer);
       }
-    } catch (error) {
+    } else if (Array.isArray(candidateBuffer)) {
       buffer = Buffer.from(candidateBuffer);
     }
-  } else if (Array.isArray(candidateBuffer)) {
-    buffer = Buffer.from(candidateBuffer);
+
+    // No valid buffer found
+    if (!buffer || !buffer.length) {
+      console.log("No valid buffer found");
+
+      if (normalizedFilePath) {
+        return normalizedFilePath;
+      }
+
+      return selectedFile?.name ? normalizePath(selectedFile.name) : null;
+    }
+
+    const attachmentsDir = path.join(process.cwd(), "public", "attachments");
+
+    await fs.mkdir(attachmentsDir, { recursive: true });
+
+    const originalName =
+      selectedFile?.name || selectedFile?.filename || filePath || "file.bin";
+
+    let extension = path.extname(originalName);
+
+    if (!extension) {
+      extension = ".bin";
+    }
+
+    const savedFilename = `${Date.now()}-${crypto
+      .randomBytes(6)
+      .toString("hex")}${extension}`;
+
+    const fullPath = path.join(attachmentsDir, savedFilename);
+
+    await fs.writeFile(fullPath, buffer);
+
+    console.log("Attachment saved:", fullPath);
+
+    return `https://4frnn03l-3000.inc1.devtunnels.ms/attachments/${savedFilename}`;
+  } catch (error) {
+    console.error("saveSocketAttachment error:", error);
+    return null;
   }
-
-  if (!buffer || !buffer.length) {
-    return selectedFile?.name ? normalizePath(selectedFile.name) : null;
-  }
-
-  const attachmentsDir = path.join(__dirname, "public", "attachments");
-  await fs.mkdir(attachmentsDir, { recursive: true });
-
-  const originalName =
-    selectedFile?.name || selectedFile?.filename || normalizedFilePath || "";
-  const extension = path.extname(originalName) || ".bin";
-  const savedFilename = `${Date.now()}-${crypto.randomBytes(6).toString("hex")}${extension}`;
-
-  await fs.writeFile(path.join(attachmentsDir, savedFilename), buffer);
-
-  return `attachments/${savedFilename}`;
 };
 
 const buildConversationList = async (currentUserId) => {
@@ -194,7 +244,8 @@ const buildConversationList = async (currentUserId) => {
       .populate({ path: "participants", select: "name" })
       .populate({
         path: "message",
-        select: "message sender receiver from to attachment createdAt timestamp",
+        select:
+          "message sender receiver from to attachment createdAt timestamp",
       })
       .sort({ updatedAt: -1 })
       .lean(),
@@ -203,14 +254,17 @@ const buildConversationList = async (currentUserId) => {
   return conversations
     .map((conversation) => {
       const otherUser = conversation.participants.find(
-        (participant) => normalizeId(participant?._id) !== normalizeId(currentUserId),
+        (participant) =>
+          normalizeId(participant?._id) !== normalizeId(currentUserId),
       );
 
       if (!otherUser) {
         return null;
       }
 
-      const messages = Array.isArray(conversation.message) ? conversation.message : [];
+      const messages = Array.isArray(conversation.message)
+        ? conversation.message
+        : [];
       const lastMessage = messages[messages.length - 1] || null;
 
       return formatConversationItem({
@@ -221,7 +275,9 @@ const buildConversationList = async (currentUserId) => {
       });
     })
     .filter(Boolean)
-    .sort((left, right) => new Date(right.updatedAt) - new Date(left.updatedAt));
+    .sort(
+      (left, right) => new Date(right.updatedAt) - new Date(left.updatedAt),
+    );
 };
 
 const buildUserList = async (currentUserId) => {
@@ -236,7 +292,8 @@ const buildUserList = async (currentUserId) => {
       .populate({ path: "participants", select: "name" })
       .populate({
         path: "message",
-        select: "message sender receiver from to attachment createdAt timestamp",
+        select:
+          "message sender receiver from to attachment createdAt timestamp",
       })
       .lean(),
   ]);
@@ -245,14 +302,17 @@ const buildUserList = async (currentUserId) => {
 
   conversations.forEach((conversation) => {
     const otherUser = conversation.participants.find(
-      (participant) => normalizeId(participant?._id) !== normalizeId(currentUserId),
+      (participant) =>
+        normalizeId(participant?._id) !== normalizeId(currentUserId),
     );
 
     if (!otherUser) {
       return;
     }
 
-    const messages = Array.isArray(conversation.message) ? conversation.message : [];
+    const messages = Array.isArray(conversation.message)
+      ? conversation.message
+      : [];
     const lastMessage = messages[messages.length - 1] || null;
 
     conversationSummaryByUserId.set(
@@ -290,7 +350,9 @@ const buildUserList = async (currentUserId) => {
         isOnline: isUserOnline(userId),
       };
     })
-    .sort((left, right) => new Date(right.updatedAt) - new Date(left.updatedAt));
+    .sort(
+      (left, right) => new Date(right.updatedAt) - new Date(left.updatedAt),
+    );
 };
 
 const buildOnlineUsers = async (currentUserId) => {
@@ -413,7 +475,9 @@ io.on("connection", async (socket) => {
   socket.on("messages", async (payload) => {
     try {
       const targetUserId = normalizeId(
-        typeof payload === "object" ? payload?.to || payload?.userId || payload?._id : payload,
+        typeof payload === "object"
+          ? payload?.to || payload?.userId || payload?._id
+          : payload,
       );
 
       if (!isValidUserId(targetUserId)) {
@@ -426,7 +490,8 @@ io.on("connection", async (socket) => {
         })
         .populate({
           path: "message",
-          select: "message sender receiver from to attachment createdAt timestamp",
+          select:
+            "message sender receiver from to attachment createdAt timestamp",
         })
         .lean();
 
@@ -436,7 +501,9 @@ io.on("connection", async (socket) => {
           message: [],
         });
 
-        conversation = await conversationModel.findById(conversation._id).lean();
+        conversation = await conversationModel
+          .findById(conversation._id)
+          .lean();
       }
 
       await loginModel.findByIdAndUpdate(socket.userID, {
@@ -445,7 +512,9 @@ io.on("connection", async (socket) => {
 
       const formattedMessages = (conversation.message || [])
         .map((message) => formatMessage(message))
-        .sort((left, right) => new Date(left.createdAt) - new Date(right.createdAt));
+        .sort(
+          (left, right) => new Date(left.createdAt) - new Date(right.createdAt),
+        );
 
       socket.emit("messages", formattedMessages);
       await emitSidebarData(socket.userID);
@@ -462,7 +531,9 @@ io.on("connection", async (socket) => {
         typeof payload.message === "string" ? payload.message.trim() : "";
 
       if (!isValidUserId(to)) {
-        return socket.emit("error", { message: "Recipient user ID is required" });
+        return socket.emit("error", {
+          message: "Recipient user ID is required",
+        });
       }
 
       const attachment = await saveSocketAttachment(
