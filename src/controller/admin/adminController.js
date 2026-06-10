@@ -892,8 +892,8 @@ exports.getConversationMessages = async (req, res) => {
     const formattedMessages = messages.map((msg) => ({
       messageId: msg._id,
       senderId: msg.sender?._id,
-      senderName: msg?.sender.name || "Unknown",
-      receiverId: msg.receiver._id,
+      senderName: msg?.sender?.name || "Unknown",
+      receiverId: msg.receiver?._id,
       receiverName: msg.receiver?.name || "Unknown",
       message: msg.message,
       attachment: msg.attachment,
