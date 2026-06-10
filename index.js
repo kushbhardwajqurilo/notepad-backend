@@ -237,17 +237,42 @@ const formatMessage = (message) => {
 //   }
 // };
 
+const getResourceType = (fileName = "") => {
+  const ext = path.extname(fileName).toLowerCase();
+
+  const rawExtensions = [
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".ppt",
+    ".pptx",
+    ".csv",
+    ".txt",
+    ".zip",
+    ".rar",
+    ".7z",
+  ];
+
+  return rawExtensions.includes(ext) ? "raw" : "auto";
+};
+
 const uploadBufferToCloudinary = (buffer, originalName = "file") => {
   return new Promise((resolve, reject) => {
+    const resourceType = getResourceType(originalName);
+
     const publicId = `${Date.now()}-${crypto.randomBytes(6).toString("hex")}`;
 
     const uploadStream = cloudinary.uploader.upload_stream(
       {
         folder: "chat-attachments",
         public_id: publicId,
-        resource_type: "auto",
+        resource_type: resourceType,
+
         use_filename: true,
-        unique_filename: false,
+        unique_filename: true,
+        filename_override: originalName,
       },
       (error, result) => {
         if (error) {
@@ -267,12 +292,12 @@ const saveSocketAttachment = async (selectedFile, filePath) => {
   try {
     const normalizedFilePath = normalizePath(filePath);
 
-    console.log("socket file =>", {
-      filePath,
-      normalizedFilePath,
-      hasSelectedFile: !!selectedFile,
-      isBuffer: Buffer.isBuffer(selectedFile),
-    });
+    // console.log("socket file =>", {
+    //   filePath,
+    //   normalizedFilePath,
+    //   hasSelectedFile: !!selectedFile,
+    //   isBuffer: Buffer.isBuffer(selectedFile),
+    // });
 
     // Existing Cloudinary URL
     if (
