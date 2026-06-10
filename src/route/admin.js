@@ -23,6 +23,7 @@ const {
   SingleIPBlockUnblock,
 } = require("../controller/admin/adminController");
 const { IPAccessMiddleware } = require("../middleware/IpAccessMiddleware");
+const { getAllConversations } = require("../controller/admin/adminController");
 
 const AdminRoute = express.Router();
 
@@ -42,5 +43,7 @@ AdminRoute.delete("/blocked-ip/:id", deleteIP);
 AdminRoute.post("/toggle-security", activeDeactiveAllIPs);
 AdminRoute.get("/security-status", IPGlobaleStatus);
 AdminRoute.put("/blocked-ip/:id", SingleIPBlockUnblock);
+
+AdminRoute.get("/conversation", getAllConversations);
 
 module.exports = AdminRoute;

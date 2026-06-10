@@ -19,6 +19,7 @@ const {
   draftData,
   draftDataGet,
   deleteDraft,
+  deleteDraftById,
 } = require("../controller/user/draft");
 const {
   addMessage,
@@ -39,17 +40,18 @@ UserRoute.post("/login", IPAccessMiddleware, loginUser);
 UserRoute.post("/register", registerUser);
 UserRoute.use(authmidleware);
 UserRoute.get("/viewnote/:id", viewNote);
-UserRoute.put("/updatenote/:id", updateNote);
+UserRoute.put("/updatenote/:id", upload.none(), updateNote);
 UserRoute.delete("/deletenote/:id", deleteNote);
 UserRoute.post("/message", upload.single("attachment"), addMessage);
 UserRoute.post("/getmessage", getAllMessage);
 UserRoute.post("/save-draft", addSaveDraft);
 UserRoute.get("/search/:data", findNotes);
 UserRoute.get("/getusername", getAllUserChatName);
-UserRoute.post("/addnotes", addNotes);
+UserRoute.post("/addnotes", upload.array("attachments"), addNotes);
 UserRoute.get("/getNotes", getNotes);
-UserRoute.post("/draft", draftData);
+UserRoute.post("/draft", upload.array("attachments"), draftData);
 UserRoute.get("/draft", draftDataGet);
 UserRoute.delete("/draft", deleteDraft);
+UserRoute.delete("/draft/:id", deleteDraftById);
 
 module.exports = UserRoute;

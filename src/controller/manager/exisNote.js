@@ -12,6 +12,7 @@ exports.getNotesUserName = async (req, res) => {
     } else {
       res.status(400).json({
         message: "User Name Not Found",
+        data: [],
       });
     }
   } catch (error) {
@@ -35,6 +36,7 @@ exports.getAllUserNote = async (req, res) => {
     } else {
       res.status(400).json({
         message: "Notes Not Found",
+        data: [],
       });
     }
   } catch (error) {

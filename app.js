@@ -23,7 +23,7 @@ app.use("/public", express.static("public"));
 require("dotenv").config();
 
 app.use(express.json());
-
+app.use(express.urlencoded({ extended: true }));
 // mainDb()
 app.get("/ip-test", IPAccessMiddleware);
 app.use("/api", UserRoute);
