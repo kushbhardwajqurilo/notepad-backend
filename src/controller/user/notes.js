@@ -331,27 +331,62 @@ exports.addNotes = async (req, res) => {
 exports.getNotes = async (req, res) => {
   try {
     const user = req.user.id;
-    // console.log("user", user);
-    const notes = await NotesModel.find({ userId: user });
-    // console.log("notes", notes);
-    if (notes.length > 0) {
-      res.status(200).json({
-        message: "Notes retrieved successfully",
-        data: notes,
-      });
-    } else {
-      res.status(200).json({
-        status: "success",
-        data: [],
-      });
+    const search = req.query?.search?.trim();
+    const date = req.query?.date?.trim();
+
+    const filter = {
+      userId: user,
+    };
+
+    // Search filter
+    if (search) {
+      filter.$or = [
+        {
+          title: {
+            $regex: search,
+            $options: "i",
+          },
+        },
+        {
+          content: {
+            $regex: search,
+            $options: "i",
+          },
+        },
+      ];
     }
+
+    // Date filter
+    if (date) {
+      const startDate = new Date(date);
+      const endDate = new Date(date);
+
+      endDate.setDate(endDate.getDate() + 1);
+
+      filter.createdAt = {
+        $gte: startDate,
+        $lt: endDate,
+      };
+    }
+
+    const notes = await NotesModel.find(filter).sort({
+      createdAt: -1,
+    });
+
+    return res.status(200).json({
+      status: "success",
+      message: "Notes retrieved successfully",
+      data: notes,
+    });
   } catch (error) {
-    res.status(500).json({
+    console.error("getNotes error:", error);
+
+    return res.status(500).json({
+      status: "error",
       message: "Internal Server Error",
     });
   }
 };
-
 exports.viewNote = async (req, res) => {
   try {
     const noteId = req.params.id;
