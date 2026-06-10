@@ -5,7 +5,7 @@ const mongoose = require("mongoose");
 const fs = require("fs/promises");
 const path = require("path");
 const crypto = require("crypto");
-
+const streamifier = require("streamifier");
 require("dotenv").config();
 
 const server = http.createServer(app);
@@ -24,6 +24,7 @@ const {
   deleteSession,
 } = require("./src/util/session");
 const MessageModel = require("./src/model/chatModal");
+const { cloudinary } = require("./src/config/cloudinary");
 
 const onlineUsers = new Map();
 
@@ -135,6 +136,133 @@ const formatMessage = (message) => {
   };
 };
 
+// const saveSocketAttachment = async (selectedFile, filePath) => {
+//   try {
+//     const normalizedFilePath = normalizePath(filePath);
+
+//     console.log("socket file =>", {
+//       filePath,
+//       normalizedFilePath,
+//       hasBuffer: Buffer.isBuffer(selectedFile),
+//       selectedFileType: typeof selectedFile,
+//     });
+
+//     // Existing uploaded file path
+//     if (
+//       normalizedFilePath &&
+//       (normalizedFilePath.startsWith("attachments/") ||
+//         normalizedFilePath.startsWith("uploads/"))
+//     ) {
+//       console.log("Using existing file path:", normalizedFilePath);
+//       return normalizedFilePath;
+//     }
+
+//     if (!selectedFile) {
+//       return normalizedFilePath || null;
+//     }
+
+//     let buffer = null;
+
+//     const candidateBuffer =
+//       selectedFile?.buffer || selectedFile?.data || selectedFile;
+
+//     if (Buffer.isBuffer(candidateBuffer)) {
+//       buffer = candidateBuffer;
+//     } else if (candidateBuffer instanceof ArrayBuffer) {
+//       buffer = Buffer.from(candidateBuffer);
+//     } else if (ArrayBuffer.isView(candidateBuffer)) {
+//       buffer = Buffer.from(
+//         candidateBuffer.buffer,
+//         candidateBuffer.byteOffset,
+//         candidateBuffer.byteLength,
+//       );
+//     } else if (typeof candidateBuffer === "string") {
+//       const rawValue = candidateBuffer.includes("base64,")
+//         ? candidateBuffer.split("base64,").pop()
+//         : candidateBuffer;
+
+//       try {
+//         const tempBuffer = Buffer.from(rawValue, "base64");
+
+//         if (tempBuffer.length > 0) {
+//           buffer = tempBuffer;
+//         } else {
+//           buffer = Buffer.from(candidateBuffer);
+//         }
+//       } catch (err) {
+//         buffer = Buffer.from(candidateBuffer);
+//       }
+//     } else if (Array.isArray(candidateBuffer)) {
+//       buffer = Buffer.from(candidateBuffer);
+//     }
+
+//     // No valid buffer found
+//     if (!buffer || !buffer.length) {
+//       console.log("No valid buffer found");
+
+//       if (normalizedFilePath) {
+//         return normalizedFilePath;
+//       }
+
+//       return selectedFile?.name ? normalizePath(selectedFile.name) : null;
+//     }
+
+//     const attachmentsDir = path.join(process.cwd(), "public", "attachments");
+
+//     await fs.mkdir(attachmentsDir, { recursive: true });
+
+//     const originalName =
+//       selectedFile?.name || selectedFile?.filename || filePath || "file.bin";
+
+//     let extension = path.extname(originalName);
+
+//     if (!extension) {
+//       extension = ".bin";
+//     }
+
+//     const savedFilename = `${Date.now()}-${crypto
+//       .randomBytes(6)
+//       .toString("hex")}${extension}`;
+
+//     const fullPath = path.join(attachmentsDir, savedFilename);
+
+//     await fs.writeFile(fullPath, buffer);
+
+//     console.log("Attachment saved:", fullPath);
+
+//     return `https://4frnn03l-3000.inc1.devtunnels.ms/attachments/${savedFilename}`;
+//   } catch (error) {
+//     console.error("saveSocketAttachment error:", error);
+//     return null;
+//   }
+// };
+
+const uploadBufferToCloudinary = (buffer, originalName = "file") => {
+  return new Promise((resolve, reject) => {
+    const publicId = `${Date.now()}-${crypto.randomBytes(6).toString("hex")}`;
+
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder: "chat-attachments",
+        public_id: publicId,
+        resource_type: "auto",
+        use_filename: true,
+        unique_filename: false,
+      },
+      (error, result) => {
+        if (error) {
+          console.error("Cloudinary Upload Error:", error);
+          return reject(error);
+        }
+
+        resolve(result);
+      },
+    );
+
+    streamifier.createReadStream(buffer).pipe(uploadStream);
+  });
+};
+
 const saveSocketAttachment = async (selectedFile, filePath) => {
   try {
     const normalizedFilePath = normalizePath(filePath);
@@ -142,17 +270,26 @@ const saveSocketAttachment = async (selectedFile, filePath) => {
     console.log("socket file =>", {
       filePath,
       normalizedFilePath,
-      hasBuffer: Buffer.isBuffer(selectedFile),
-      selectedFileType: typeof selectedFile,
+      hasSelectedFile: !!selectedFile,
+      isBuffer: Buffer.isBuffer(selectedFile),
     });
 
-    // Existing uploaded file path
+    // Existing Cloudinary URL
     if (
       normalizedFilePath &&
+      (normalizedFilePath.startsWith("http://") ||
+        normalizedFilePath.startsWith("https://"))
+    ) {
+      return normalizedFilePath;
+    }
+
+    // Existing attachment path
+    if (
+      normalizedFilePath &&
+      !selectedFile &&
       (normalizedFilePath.startsWith("attachments/") ||
         normalizedFilePath.startsWith("uploads/"))
     ) {
-      console.log("Using existing file path:", normalizedFilePath);
       return normalizedFilePath;
     }
 
@@ -181,11 +318,9 @@ const saveSocketAttachment = async (selectedFile, filePath) => {
         : candidateBuffer;
 
       try {
-        const tempBuffer = Buffer.from(rawValue, "base64");
+        buffer = Buffer.from(rawValue, "base64");
 
-        if (tempBuffer.length > 0) {
-          buffer = tempBuffer;
-        } else {
+        if (!buffer.length) {
           buffer = Buffer.from(candidateBuffer);
         }
       } catch (err) {
@@ -195,47 +330,26 @@ const saveSocketAttachment = async (selectedFile, filePath) => {
       buffer = Buffer.from(candidateBuffer);
     }
 
-    // No valid buffer found
     if (!buffer || !buffer.length) {
       console.log("No valid buffer found");
 
-      if (normalizedFilePath) {
-        return normalizedFilePath;
-      }
-
-      return selectedFile?.name ? normalizePath(selectedFile.name) : null;
+      return normalizedFilePath || null;
     }
-
-    const attachmentsDir = path.join(process.cwd(), "public", "attachments");
-
-    await fs.mkdir(attachmentsDir, { recursive: true });
 
     const originalName =
-      selectedFile?.name || selectedFile?.filename || filePath || "file.bin";
+      selectedFile?.name || selectedFile?.filename || filePath || "file";
 
-    let extension = path.extname(originalName);
+    const uploadResult = await uploadBufferToCloudinary(buffer, originalName);
 
-    if (!extension) {
-      extension = ".bin";
-    }
+    console.log("Cloudinary Upload Success:", uploadResult.secure_url);
 
-    const savedFilename = `${Date.now()}-${crypto
-      .randomBytes(6)
-      .toString("hex")}${extension}`;
-
-    const fullPath = path.join(attachmentsDir, savedFilename);
-
-    await fs.writeFile(fullPath, buffer);
-
-    console.log("Attachment saved:", fullPath);
-
-    return `https://4frnn03l-3000.inc1.devtunnels.ms/attachments/${savedFilename}`;
+    return uploadResult.secure_url;
   } catch (error) {
     console.error("saveSocketAttachment error:", error);
+
     return null;
   }
 };
-
 const buildConversationList = async (currentUserId) => {
   const [currentUser, conversations] = await Promise.all([
     loginModel.findById(currentUserId),

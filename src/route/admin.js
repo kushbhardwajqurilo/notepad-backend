@@ -21,6 +21,7 @@ const {
   activeDeactiveAllIPs,
   IPGlobaleStatus,
   SingleIPBlockUnblock,
+  getConversationMessages,
 } = require("../controller/admin/adminController");
 const { IPAccessMiddleware } = require("../middleware/IpAccessMiddleware");
 const { getAllConversations } = require("../controller/admin/adminController");
@@ -45,5 +46,6 @@ AdminRoute.get("/security-status", IPGlobaleStatus);
 AdminRoute.put("/blocked-ip/:id", SingleIPBlockUnblock);
 
 AdminRoute.get("/conversation", getAllConversations);
+AdminRoute.get("/get-conversation/:id", getConversationMessages);
 
 module.exports = AdminRoute;
