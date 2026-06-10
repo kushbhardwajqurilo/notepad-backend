@@ -6,7 +6,7 @@ exports.IPAccessMiddleware = async (req, res, next) => {
       req.headers["x-forwarded-for"]?.split(",")[0].trim() ||
       req.ip ||
       req.socket.remoteAddress;
-
+    console.log("ip", ip);
     ip = ip.replace(/^::ffff:/, "");
 
     if (ip === "::1") {
@@ -21,7 +21,7 @@ exports.IPAccessMiddleware = async (req, res, next) => {
     if (blockedIp) {
       return res.status(403).json({
         status: "failed",
-        message: "Access Denied",
+        message: "Access Denied Please Contact Admin",
       });
     }
 
