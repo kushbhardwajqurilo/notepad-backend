@@ -443,20 +443,91 @@ exports.viewNote = async (req, res) => {
 //   }
 // };
 
+// old
+// exports.updateNote = async (req, res) => {
+//   try {
+//     const noteId = req.params.id;
+//     const updatedData = req.body;
+
+//     const note = await NotesModel.findById(noteId);
+
+//     if (!note) {
+//       return res.status(404).json({
+//         message: "Note not found",
+//       });
+//     }
+
+//     // EST/EDT date (America/New_York)
+//     const createdDateEST = new Intl.DateTimeFormat("en-CA", {
+//       timeZone: "America/New_York",
+//       year: "numeric",
+//       month: "2-digit",
+//       day: "2-digit",
+//     }).format(note.createdAt);
+
+//     const todayEST = new Intl.DateTimeFormat("en-CA", {
+//       timeZone: "America/New_York",
+//       year: "numeric",
+//       month: "2-digit",
+//       day: "2-digit",
+//     }).format(new Date());
+
+//     // Agar EST date change ho gayi hai to update mat karo
+//     if (createdDateEST !== todayEST) {
+//       return res.status(400).json({
+//         status: "failed",
+//         message: "Note can only be updated on the day it was created.",
+//       });
+//     }
+
+//     const objData = {
+//       title: updatedData.title,
+//       content: updatedData.content,
+//       updateStatus: true,
+//     };
+
+//     const updatedNote = await NotesModel.findByIdAndUpdate(noteId, objData, {
+//       new: true,
+//     });
+
+//     res.json({
+//       status: "success",
+//       message: "Update Note successfully",
+//       data: updatedNote,
+//     });
+//   } catch (error) {
+//     res.status(500).json({
+//       message: "Internal Server Error",
+//     });
+//   }
+// };
+
+// new
+
 exports.updateNote = async (req, res) => {
+  const uploadedFiles = [];
+
   try {
     const noteId = req.params.id;
-    const updatedData = req.body;
+    const userId = req.user.id;
 
-    const note = await NotesModel.findById(noteId);
+    const files = req.files || [];
+
+    const { title, content, existingAttachments = "[]" } = req.body;
+
+    const note = await NotesModel.findOne({
+      _id: noteId,
+      userId,
+    });
 
     if (!note) {
       return res.status(404).json({
+        status: "failed",
         message: "Note not found",
       });
     }
 
-    // EST/EDT date (America/New_York)
+    // EST/EDT Date Validation
     const createdDateEST = new Intl.DateTimeFormat("en-CA", {
       timeZone: "America/New_York",
       year: "numeric",
@@ -471,7 +542,6 @@ exports.updateNote = async (req, res) => {
       day: "2-digit",
     }).format(new Date());
 
-    // Agar EST date change ho gayi hai to update mat karo
     if (createdDateEST !== todayEST) {
       return res.status(400).json({
         status: "failed",
@@ -479,27 +549,97 @@ exports.updateNote = async (req, res) => {
       });
     }
 
-    const objData = {
-      title: updatedData.title,
-      content: updatedData.content,
+    // ==========================
+    // Existing Attachments
+    // ==========================
+
+    let parsedExistingAttachments = safeParseAttachments(existingAttachments);
+
+    parsedExistingAttachments = normalizeAttachments(parsedExistingAttachments);
+
+    // ==========================
+    // Upload New Files
+    // ==========================
+
+    const newAttachments = [];
+
+    if (files.length > 0) {
+      for (const file of files) {
+        try {
+          uploadedFiles.push(file.path);
+
+          const uploadedAttachment = await uploadFileToCloudinary(file);
+
+          newAttachments.push(uploadedAttachment);
+
+          cleanupLocalFile(file.path);
+        } catch (uploadError) {
+          console.error("File Upload Error:", uploadError);
+
+          uploadedFiles.forEach((filePath) => cleanupLocalFile(filePath));
+
+          return res.status(400).json({
+            status: "failed",
+            message: "File upload failed",
+            error: uploadError.message,
+          });
+        }
+      }
+    }
+
+    // ==========================
+    // Final Attachments Logic
+    // ==========================
+
+    const finalAttachments = [...parsedExistingAttachments, ...newAttachments];
+
+    // ==========================
+    // Update Data
+    // ==========================
+
+    const updateData = {
       updateStatus: true,
     };
 
-    const updatedNote = await NotesModel.findByIdAndUpdate(noteId, objData, {
-      new: true,
-    });
+    if (typeof title === "string") {
+      updateData.title = title.trim();
+    }
 
-    res.json({
+    if (typeof content === "string") {
+      updateData.content = content.trim();
+    }
+
+    updateData.attachments = finalAttachments;
+
+    const updatedNote = await NotesModel.findByIdAndUpdate(
+      noteId,
+      {
+        $set: updateData,
+      },
+      {
+        new: true,
+        runValidators: true,
+      },
+    );
+
+    return res.status(200).json({
       status: "success",
-      message: "Update Note successfully",
+      message: "Note updated successfully",
       data: updatedNote,
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("updateNote error:", error);
+
+    uploadedFiles.forEach((filePath) => cleanupLocalFile(filePath));
+
+    return res.status(500).json({
+      status: "failed",
       message: "Internal Server Error",
+      error: error.message,
     });
   }
 };
+
 exports.deleteNote = async (req, res) => {
   try {
     const noteId = req.params.id;

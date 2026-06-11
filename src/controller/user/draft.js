@@ -467,39 +467,52 @@ const path = require("path");
 // };
 function safeParseAttachments(data) {
   try {
-    // If already an array, return it
     if (Array.isArray(data)) {
-      console.log("✓ Attachments already an array");
+      // console.log("✓ Data is already an array");
       return data;
     }
 
-    // If null, undefined, or empty string, return empty array
     if (!data || data === "" || data === "null" || data === "undefined") {
-      console.log("✓ Attachments is empty");
+      // console.log("✓ Data is empty");
       return [];
     }
 
-    // If it's a string, try to parse it
     if (typeof data === "string") {
-      const parsed = JSON.parse(data);
+      // console.log("📝 Parsing string data...");
 
-      // Check if parsed result is an array
-      if (Array.isArray(parsed)) {
-        console.log("✓ Parsed attachments from string");
-        return parsed;
+      try {
+        const parsed = JSON.parse(data);
+        // console.log("Parsed result type:", typeof parsed);
+        // console.log("Is array:", Array.isArray(parsed));
+
+        if (Array.isArray(parsed)) {
+          // console.log("✓ Parsed array from string");
+          return parsed;
+        }
+
+        if (typeof parsed === "object" && parsed !== null) {
+          // console.log("✓Parsed single object from string, converting to array");
+          return [parsed]; // ← Convert to array!
+        }
+
+        // console.warn("⚠ Parsed data is neither array nor object:", parsed);
+        return [];
+      } catch (parseErr) {
+        console.error("❌ JSON parse error:", parseErr.message);
+        return [];
       }
-
-      // If parsed is an object but not array, return empty array
-      console.warn("⚠ Parsed data is not array:", parsed);
-      return [];
     }
 
-    // Fallback
-    console.warn("⚠ Unknown attachments format:", typeof data);
+    if (typeof data === "object" && data !== null) {
+      // console.log("✓ Data is single object, converting to array");
+      return [data]; // ← Convert single object to array!
+    }
+
+    // console.warn("⚠ Unknown data format:", typeof data);
     return [];
   } catch (err) {
-    console.error("❌ Parse error:", err.message);
-    console.error("Original data:", data);
+    // console.error("❌ Error in safeParseAttachments:", err.message);
+    // console.error("Original data:", data);
     return [];
   }
 }
@@ -754,66 +767,219 @@ function normalizeAttachments(attachmentsArray) {
 //   }
 // };
 
+// exports.draftData = async (req, res) => {
+//   const uploadedFiles = [];
+
+//   try {
+//     const files = req.files || [];
+//     const {
+//       content,
+//       title,
+//       noteId,
+//       id: draftId,
+//       existingAttachments = "[]",
+//       removedAttachmentIds = "[]",
+//     } = req.body;
+
+//     const userId = req.user.id;
+
+//     let parsedExistingAttachments = safeParseAttachments(existingAttachments);
+//     const parsedRemovedAttachments = safeParseAttachments(removedAttachmentIds);
+//     parsedExistingAttachments = normalizeAttachments(parsedExistingAttachments);
+
+//     // DEBUG: Log first attachment to verify it's an object
+//     if (parsedExistingAttachments.length > 0) {
+//       console.log("Sample attachment:", {
+//         type: typeof parsedExistingAttachments[0],
+//         isObject: typeof parsedExistingAttachments[0] === "object",
+//         keys: Object.keys(parsedExistingAttachments[0] || {}),
+//       });
+//     }
+
+//     // ============================================
+//     // 3. DELETE REMOVED ATTACHMENTS FROM CLOUDINARY
+//     // ============================================
+//     if (parsedRemovedAttachments.length > 0) {
+//       for (const attachmentId of parsedRemovedAttachments) {
+//         const attachment = parsedExistingAttachments.find(
+//           (att) =>
+//             att.public_id === attachmentId ||
+//             att.path === attachmentId ||
+//             att._id === attachmentId,
+//         );
+
+//         if (attachment) {
+//           const resourceType = attachment.resource_type || "image";
+//           await deleteFromCloudinary(attachment.public_id, resourceType);
+//         }
+//       }
+//     }
+//     const filteredAttachments = parsedExistingAttachments.filter(
+//       (attachment) => {
+//         const isRemoved =
+//           parsedRemovedAttachments.includes(attachment.public_id) ||
+//           parsedRemovedAttachments.includes(attachment.path) ||
+//           parsedRemovedAttachments.includes(attachment._id?.toString());
+
+//         return !isRemoved;
+//       },
+//     );
+//     const newAttachments = [];
+
+//     if (files.length > 0) {
+//       for (const file of files) {
+//         try {
+//           uploadedFiles.push(file.path);
+
+//           const uploadedAttachment = await uploadFileToCloudinary(file);
+//           newAttachments.push(uploadedAttachment);
+
+//           cleanupLocalFile(file.path);
+//         } catch (uploadError) {
+//           // Cleanup on error
+//           for (const attachment of newAttachments) {
+//             await deleteFromCloudinary(
+//               attachment.public_id,
+//               attachment.resource_type,
+//             );
+//           }
+
+//           uploadedFiles.forEach((filePath) => cleanupLocalFile(filePath));
+
+//           return res.status(400).json({
+//             status: "failed",
+//             message: "File upload failed",
+//             error: uploadError.message,
+//             file: file.originalname,
+//           });
+//         }
+//       }
+//     }
+
+//     let finalAttachments = [...filteredAttachments, ...newAttachments];
+
+//     // ✅ CRITICAL: Normalize all attachments before saving
+//     finalAttachments = normalizeAttachments(finalAttachments);
+
+//     finalAttachments.forEach((att, index) => {
+//       if (typeof att !== "object") {
+//         console.warn(`⚠️ Attachment ${index} is not an object!`, typeof att);
+//       }
+//     });
+//     let draft = null;
+
+//     if (draftId) {
+//       draft = await draftModel.findOne({
+//         _id: draftId,
+//         userId,
+//       });
+//       console.log("By ID:", draft ? "✓ Found" : "✗ Not found");
+//     }
+
+//     if (!draft && noteId) {
+//       draft = await draftModel.findOne({
+//         userId,
+//         noteId,
+//       });
+//       console.log("By noteId:", draft ? "✓ Found" : "✗ Not found");
+//     }
+
+//     // ============================================
+//     // 8. UPDATE OR CREATE DRAFT
+//     // ============================================
+//     if (draft) {
+//       console.log("\n📝 Updating draft...");
+
+//       draft.title = title;
+//       draft.content = content;
+//       draft.noteId = noteId;
+//       draft.attachments = finalAttachments; // ✅ Array of objects, not strings
+//       draft.updatedAt = new Date();
+
+//       await draft.save();
+
+//       console.log("✅ Draft updated successfully");
+
+//       return res.status(200).json({
+//         status: "success",
+//         message: "Draft updated successfully",
+//         data: draft,
+//       });
+//     }
+
+//     console.log("\n✨ Creating new draft...");
+
+//     const newDraft = await draftModel.create({
+//       title,
+//       content,
+//       noteId,
+//       userId,
+//       isDraft: true,
+//       attachments: finalAttachments, // ✅ Array of objects, not strings
+//     });
+
+//     console.log("✅ Draft created successfully");
+
+//     return res.status(201).json({
+//       status: "success",
+//       message: "Draft created successfully",
+//       data: newDraft,
+//     });
+//   } catch (error) {
+//     console.error("\n=== ERROR ===", error);
+
+//     // Cleanup on error
+//     uploadedFiles.forEach((filePath) => cleanupLocalFile(filePath));
+
+//     return res.status(500).json({
+//       status: "failed",
+//       message: "Internal Server Error",
+//       error: error.message,
+//     });
+//   }
+// };
+
 exports.draftData = async (req, res) => {
   const uploadedFiles = [];
 
   try {
-    const files = req.files || [];
+    const files = req.files || []; // ← New attachments (binary)
+
     const {
       content,
       title,
       noteId,
       id: draftId,
-      existingAttachments = "[]",
-      removedAttachmentIds = "[]",
+      existingAttachments = "[]", // ← Existing attachments (JSON string)
     } = req.body;
-
+    // console.log("exist", existingAttachments);
     const userId = req.user.id;
 
+    // ============================================
+    // STEP 1: PARSE EXISTING ATTACHMENTS
+    // ============================================
+    console.log("\n📊 Parsing existing attachments...");
+
     let parsedExistingAttachments = safeParseAttachments(existingAttachments);
-    const parsedRemovedAttachments = safeParseAttachments(removedAttachmentIds);
-    parsedExistingAttachments = normalizeAttachments(parsedExistingAttachments);
-
-    // DEBUG: Log first attachment to verify it's an object
-    if (parsedExistingAttachments.length > 0) {
-      console.log("Sample attachment:", {
-        type: typeof parsedExistingAttachments[0],
-        isObject: typeof parsedExistingAttachments[0] === "object",
-        keys: Object.keys(parsedExistingAttachments[0] || {}),
-      });
-    }
-
-    // ============================================
-    // 3. DELETE REMOVED ATTACHMENTS FROM CLOUDINARY
-    // ============================================
-    if (parsedRemovedAttachments.length > 0) {
-      for (const attachmentId of parsedRemovedAttachments) {
-        const attachment = parsedExistingAttachments.find(
-          (att) =>
-            att.public_id === attachmentId ||
-            att.path === attachmentId ||
-            att._id === attachmentId,
-        );
-
-        if (attachment) {
-          const resourceType = attachment.resource_type || "image";
-          await deleteFromCloudinary(attachment.public_id, resourceType);
-        }
-      }
-    }
-    const filteredAttachments = parsedExistingAttachments.filter(
-      (attachment) => {
-        const isRemoved =
-          parsedRemovedAttachments.includes(attachment.public_id) ||
-          parsedRemovedAttachments.includes(attachment.path) ||
-          parsedRemovedAttachments.includes(attachment._id?.toString());
-
-        return !isRemoved;
-      },
+    console.log("noraml", parsedExistingAttachments);
+    // Normalize को ensure करो सब objects हैं
+    parsedExistingAttachments = normalizeAttachments(
+      parsedExistingAttachments || [],
     );
+
+    // console.log("✓ Existing attachments:", parsedExistingAttachments.length);
+    if (parsedExistingAttachments.length > 0) {
+      console.log("Sample existing:", parsedExistingAttachments[0]);
+    }
+
+    // ============================================
+    // STEP 2: UPLOAD NEW FILES
+    // ============================================
     const newAttachments = [];
 
     if (files.length > 0) {
+      // console.log("\n📤 Uploading new files...");
+
       for (const file of files) {
         try {
           uploadedFiles.push(file.path);
@@ -822,14 +988,10 @@ exports.draftData = async (req, res) => {
           newAttachments.push(uploadedAttachment);
 
           cleanupLocalFile(file.path);
+
+          // console.log("✓ File uploaded:", file.originalname);
         } catch (uploadError) {
-          // Cleanup on error
-          for (const attachment of newAttachments) {
-            await deleteFromCloudinary(
-              attachment.public_id,
-              attachment.resource_type,
-            );
-          }
+          console.error("❌ Upload failed:", uploadError);
 
           uploadedFiles.forEach((filePath) => cleanupLocalFile(filePath));
 
@@ -837,22 +999,37 @@ exports.draftData = async (req, res) => {
             status: "failed",
             message: "File upload failed",
             error: uploadError.message,
-            file: file.originalname,
           });
         }
       }
     }
 
-    let finalAttachments = [...filteredAttachments, ...newAttachments];
+    // console.log("✓ New attachments:", newAttachments.length);
 
-    // ✅ CRITICAL: Normalize all attachments before saving
-    finalAttachments = normalizeAttachments(finalAttachments);
+    // ============================================
+    // STEP 3: COMBINE - existing + new
+    // ============================================
+    console.log("\n📦 Combining attachments...");
 
+    const finalAttachments = [...parsedExistingAttachments, ...newAttachments];
+
+    // console.log("✓ Final attachments:", finalAttachments.length);
+
+    // Verify all are objects
+    // console.log("\n🔍 Validating final attachments:");
     finalAttachments.forEach((att, index) => {
       if (typeof att !== "object") {
-        console.warn(`⚠️ Attachment ${index} is not an object!`, typeof att);
+        console.warn(`⚠️ Attachment ${index} is NOT an object!`, typeof att);
+      } else {
+        console.log(`✓ Attachment ${index} is object`);
       }
     });
+
+    // ============================================
+    // STEP 4: FIND DRAFT
+    // ============================================
+    // console.log("\n🔍 Finding draft...");
+
     let draft = null;
 
     if (draftId) {
@@ -872,15 +1049,15 @@ exports.draftData = async (req, res) => {
     }
 
     // ============================================
-    // 8. UPDATE OR CREATE DRAFT
+    // STEP 5: UPDATE OR CREATE DRAFT
     // ============================================
     if (draft) {
       console.log("\n📝 Updating draft...");
 
-      draft.title = title;
-      draft.content = content;
-      draft.noteId = noteId;
-      draft.attachments = finalAttachments; // ✅ Array of objects, not strings
+      draft.title = title !== undefined ? title : draft.title;
+      draft.content = content !== undefined ? content : draft.content;
+      draft.noteId = noteId !== undefined ? noteId : draft.noteId;
+      draft.attachments = finalAttachments; // ✅ Replace with final!
       draft.updatedAt = new Date();
 
       await draft.save();
@@ -902,7 +1079,7 @@ exports.draftData = async (req, res) => {
       noteId,
       userId,
       isDraft: true,
-      attachments: finalAttachments, // ✅ Array of objects, not strings
+      attachments: finalAttachments, // ✅ Combine!
     });
 
     console.log("✅ Draft created successfully");
@@ -915,7 +1092,6 @@ exports.draftData = async (req, res) => {
   } catch (error) {
     console.error("\n=== ERROR ===", error);
 
-    // Cleanup on error
     uploadedFiles.forEach((filePath) => cleanupLocalFile(filePath));
 
     return res.status(500).json({

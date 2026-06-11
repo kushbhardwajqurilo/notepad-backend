@@ -40,7 +40,7 @@ UserRoute.post("/login", IPAccessMiddleware, loginUser);
 UserRoute.post("/register", registerUser);
 UserRoute.use(authmidleware);
 UserRoute.get("/viewnote/:id", viewNote);
-UserRoute.put("/updatenote/:id", upload.none(), updateNote);
+UserRoute.put("/updatenote/:id", upload.array("attachments"), updateNote);
 UserRoute.delete("/deletenote/:id", deleteNote);
 UserRoute.post("/message", upload.single("attachment"), addMessage);
 UserRoute.post("/getmessage", getAllMessage);
