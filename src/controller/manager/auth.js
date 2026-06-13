@@ -52,7 +52,15 @@ exports.signUpAdmin = async (req, res) => {
       name: data.name,
       role: Role.Manager,
     };
+    const existEmail = await loginModel.findOne({ email: data?.email });
+    if (existEmail) {
+      return res.status(400).json({
+        status: "failed",
+        message: "Email Already Used",
+      });
+    }
     const loginCreate = await loginModel.create(objData);
+    console.log("creattet", loginCreate);
     if (loginCreate) {
       return res.status(200).json({
         message: "Account Created",
@@ -63,6 +71,7 @@ exports.signUpAdmin = async (req, res) => {
       });
     }
   } catch (error) {
+    console.log("error:", error);
     return res.status(501).json({
       message: "Internal Server Error",
     });

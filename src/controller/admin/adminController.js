@@ -1,5 +1,6 @@
 const MessageModel = require("../../model/chatModal");
 const conversationModel = require("../../model/conversatation");
+const globalIpModel = require("../../model/globalIPBlockModel");
 const IpBlockModel = require("../../model/IPModel");
 
 exports.addIp = async (req, res) => {
@@ -105,48 +106,67 @@ exports.deleteIP = async (req, res) => {
 };
 
 // active all ip active
-exports.activeDeactiveAllIPs = async (req, res, next) => {
+exports.activeDeactiveAllIPs = async (req, res) => {
   try {
-    const { status } = req?.body;
-    const result = await IpBlockModel.updateMany({ isActive: !status });
-    if (result.modifiedCount === 0) {
-      return res.status(400).json({
-        status: "failed",
-        message: "failed to active",
-      });
-    }
-    return res.status(201).json({
+    const { status } = req.body;
+
+    // Create global document if not exists
+    await globalIpModel.findOneAndUpdate(
+      {},
+      {
+        $set: {
+          isGlobalBlocked: status,
+        },
+      },
+      {
+        upsert: true,
+        new: true,
+      },
+    );
+
+    // Update all existing IPs (if any)
+    const result = await IpBlockModel.updateMany(
+      {},
+      {
+        $set: {
+          isActive: !status,
+        },
+      },
+    );
+
+    return res.status(200).json({
       status: "success",
       message: status ? "All IP's Blocked" : "All IP's Activated",
+      data: {
+        totalIPsFound: result.matchedCount,
+        totalIPsUpdated: result.modifiedCount,
+        isGlobalBlocked: !status,
+      },
+    });
+  } catch (error) {
+    console.log("Error:", error);
+
+    return res.status(500).json({
+      status: "failed",
+      message: "Internal Server Error",
+      error: error.message,
+    });
+  }
+};
+exports.IPGlobaleStatus = async (req, res) => {
+  try {
+    const globalStatus = await globalIpModel.findOne().lean();
+
+    return res.status(200).json({
+      status: "success",
+      data: {
+        isGlobalBlocked: globalStatus?.isGlobalBlocked ?? false,
+      },
     });
   } catch (error) {
     return res.status(500).json({
       status: "failed",
-      message: "Internal Server Error",
-      error: error,
-    });
-  }
-};
-exports.IPGlobaleStatus = async (req, res, next) => {
-  try {
-    const AllIp = await IpBlockModel.find({}, "isActive");
-    if (!AllIp) {
-      return res.status(201).json({
-        status: "success",
-        message: "",
-        data: { isGlobalBlocked: null },
-      });
-    }
-    const isActive = AllIp.every((val) => val?.isActive === false);
-    return res.status(201).json({
-      status: "success",
-      message: "",
-      data: { isGlobalBlocked: isActive },
-    });
-  } catch (err) {
-    return res.status(500).json({
-      status: "failed",
-      message: "something went wrong",
+      message: "Something went wrong",
     });
   }
 };
