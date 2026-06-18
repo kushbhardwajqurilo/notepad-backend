@@ -7,6 +7,10 @@ const {
   deleteNote,
   findNotes,
   getBackupNotes,
+  addCredentialNote,
+  updateCredentialNote,
+  getCredentialNotes,
+  viewCredentialNote,
 } = require("../controller/user/notes");
 const {
   registerUser,
@@ -54,4 +58,17 @@ UserRoute.get("/draft", draftDataGet);
 UserRoute.delete("/draft", deleteDraft);
 UserRoute.delete("/draft/:id", deleteDraftById);
 
+// crentialNote rout
+UserRoute.post(
+  "/addcredentialnotes",
+  upload.array("attachments"),
+  addCredentialNote,
+);
+UserRoute.put(
+  "/updatecredentialnote/:id",
+  upload.array("attachments"),
+  updateCredentialNote,
+);
+// UserRoute.get("/getcredentialNotes", getCredentialNotes);
+UserRoute.get("/getcredentialnote", viewCredentialNote);
 module.exports = UserRoute;

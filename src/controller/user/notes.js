@@ -3,6 +3,7 @@ const {
   deleteFromCloudinary,
   uploadFileToCloudinary,
 } = require("../../config/cloudinary");
+const credentialNote = require("../../model/credantialNoteModel");
 const NotesModel = require("../../model/notes");
 
 function safeParseAttachments(data) {
@@ -723,6 +724,392 @@ exports.getBackupNotes = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       message: "Internal Server Error",
+    });
+  }
+};
+
+// credentails note
+exports.addCredentialNote = async (req, res) => {
+  const uploadedFiles = [];
+
+  try {
+    const files = req.files || [];
+    const {
+      title,
+      content,
+      existingAttachments = "[]",
+      removedAttachmentIds = "[]",
+    } = req.body;
+
+    const userId = req.user.id;
+
+    let parsedExistingAttachments = safeParseAttachments(existingAttachments);
+    const parsedRemovedAttachments = safeParseAttachments(removedAttachmentIds);
+
+    // ============================================
+    // 3. NORMALIZE EXISTING ATTACHMENTS
+    // ============================================
+
+    parsedExistingAttachments = normalizeAttachments(parsedExistingAttachments);
+
+    if (parsedExistingAttachments.length > 0) {
+      console.log("Sample attachment:", {
+        type: typeof parsedExistingAttachments[0],
+        isObject: typeof parsedExistingAttachments[0] === "object",
+      });
+    }
+
+    // ============================================
+    // 4. DELETE REMOVED ATTACHMENTS FROM CLOUDINARY
+    // ============================================
+    if (parsedRemovedAttachments.length > 0) {
+      for (const attachmentId of parsedRemovedAttachments) {
+        const attachment = parsedExistingAttachments.find(
+          (att) =>
+            att.public_id === attachmentId ||
+            att.path === attachmentId ||
+            att._id === attachmentId,
+        );
+
+        if (attachment) {
+          const resourceType = attachment.resource_type || "image";
+          await deleteFromCloudinary(attachment.public_id, resourceType);
+        }
+      }
+    }
+
+    // ============================================
+    // 5. FILTER OUT REMOVED ATTACHMENTS
+    // ============================================
+    const filteredAttachments = parsedExistingAttachments.filter(
+      (attachment) => {
+        const isRemoved =
+          parsedRemovedAttachments.includes(attachment.public_id) ||
+          parsedRemovedAttachments.includes(attachment.path) ||
+          parsedRemovedAttachments.includes(attachment._id?.toString());
+
+        return !isRemoved;
+      },
+    );
+
+    // ============================================
+    // 6. UPLOAD NEW FILES
+    // ============================================
+    const newAttachments = [];
+
+    if (files.length > 0) {
+      console.log("\n📤 Uploading new files...");
+
+      for (const file of files) {
+        try {
+          uploadedFiles.push(file.path);
+
+          const uploadedAttachment = await uploadFileToCloudinary(file);
+          newAttachments.push(uploadedAttachment);
+
+          cleanupLocalFile(file.path);
+        } catch (uploadError) {
+          console.error("❌ Upload failed:", uploadError);
+
+          // Cleanup on error
+          for (const attachment of newAttachments) {
+            await deleteFromCloudinary(
+              attachment.public_id,
+              attachment.resource_type,
+            );
+          }
+
+          uploadedFiles.forEach((filePath) => cleanupLocalFile(filePath));
+
+          return res.status(400).json({
+            status: "failed",
+            message: "File upload failed",
+            error: uploadError.message,
+            file: file.originalname,
+          });
+        }
+      }
+    }
+
+    // ============================================
+    // 7. COMBINE & NORMALIZE FINAL ATTACHMENTS
+    // ============================================
+
+    let finalAttachments = [...filteredAttachments, ...newAttachments];
+
+    // ✅ CRITICAL: Normalize all attachments before saving
+    finalAttachments = normalizeAttachments(finalAttachments);
+
+    // Verify all attachments are objects
+
+    finalAttachments.forEach((att, index) => {
+      if (typeof att !== "object") {
+        console.warn(`⚠️ Attachment ${index} is not an object!`, typeof att);
+      }
+    });
+
+    // ============================================
+    // 8. CREATE OR UPDATE NOTE (ONE NOTE PER USER)
+    // ============================================
+
+    const noteData = {
+      content: content || "",
+      attachments: finalAttachments,
+      updateStatus: true,
+    };
+
+    // Find existing note for user
+    let note = await credentialNote.findOne({ userId });
+
+    if (note) {
+      note.content = noteData.content;
+      note.attachments = noteData.attachments;
+      note.updateStatus = true;
+
+      await note.save();
+    } else {
+      note = await credentialNote.create({
+        userId,
+        content: noteData.content,
+        attachments: noteData.attachments,
+        updateStatus: false,
+      });
+    }
+
+    return res.status(200).json({
+      status: "success",
+      message:
+        note.createdAt.getTime() === note.updatedAt.getTime()
+          ? "Note created successfully"
+          : "Note updated successfully",
+      data: {
+        _id: note._id,
+        content: note.content,
+        attachments: note.attachments,
+        attachmentCount: note.attachments?.length || 0,
+        createdAt: note.createdAt,
+        updatedAt: note.updatedAt,
+      },
+    });
+  } catch (error) {
+    console.error("\n=== ERROR ===", error);
+
+    // Cleanup on error
+    uploadedFiles.forEach((filePath) => cleanupLocalFile(filePath));
+
+    return res.status(500).json({
+      status: "failed",
+      message: "Internal Server Error",
+      error: error.message,
+    });
+  }
+};
+exports.getCredentialNotes = async (req, res) => {
+  try {
+    const user = req.user.id;
+    const search = req.query?.search?.trim();
+    const date = req.query?.date?.trim();
+
+    const filter = {
+      userId: user,
+    };
+
+    // Search filter
+    if (search) {
+      filter.$or = [
+        {
+          content: {
+            $regex: search,
+            $options: "i",
+          },
+        },
+      ];
+    }
+
+    // Date filter
+    if (date) {
+      const startDate = new Date(date);
+      const endDate = new Date(date);
+
+      endDate.setDate(endDate.getDate() + 1);
+
+      filter.createdAt = {
+        $gte: startDate,
+        $lt: endDate,
+      };
+    }
+
+    const notes = await credentialNote.find(filter).sort({
+      createdAt: -1,
+    });
+
+    return res.status(200).json({
+      status: "success",
+      message: "Notes retrieved successfully",
+      data: notes,
+    });
+  } catch (error) {
+    console.error("getNotes error:", error);
+
+    return res.status(500).json({
+      status: "error",
+      message: "Internal Server Error",
+    });
+  }
+};
+exports.viewCredentialNote = async (req, res) => {
+  try {
+    const user = req.user;
+    // console.log("user", user);
+    // const noteId = req.params.id;
+
+    const note = await credentialNote.findOne({ userId: user.id });
+
+    if (note) {
+      res.status(200).json({
+        message: "Note retrieved successfully",
+        data: note,
+      });
+    } else {
+      res.status(404).json({
+        message: "Note not found",
+      });
+    }
+  } catch (error) {
+    res.status(500).json({
+      message: "Internal Server Error",
+    });
+  }
+};
+
+exports.updateCredentialNote = async (req, res) => {
+  const uploadedFiles = [];
+
+  try {
+    const noteId = req.params.id;
+    const userId = req.user.id;
+
+    const files = req.files || [];
+
+    const { content, existingAttachments = "[]" } = req.body;
+
+    const note = await credentialNote.findOne({
+      _id: noteId,
+      userId,
+    });
+
+    if (!note) {
+      return res.status(404).json({
+        status: "failed",
+        message: "Note not found",
+      });
+    }
+
+    // EST/EDT Date Validation
+    const createdDateEST = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/New_York",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(note.createdAt);
+
+    const todayEST = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/New_York",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+
+    if (createdDateEST !== todayEST) {
+      return res.status(400).json({
+        status: "failed",
+        message: "Note can only be updated on the day it was created.",
+      });
+    }
+
+    // ==========================
+    // Existing Attachments
+    // ==========================
+
+    let parsedExistingAttachments = safeParseAttachments(existingAttachments);
+
+    parsedExistingAttachments = normalizeAttachments(parsedExistingAttachments);
+
+    // ==========================
+    // Upload New Files
+    // ==========================
+
+    const newAttachments = [];
+
+    if (files.length > 0) {
+      for (const file of files) {
+        try {
+          uploadedFiles.push(file.path);
+
+          const uploadedAttachment = await uploadFileToCloudinary(file);
+
+          newAttachments.push(uploadedAttachment);
+
+          cleanupLocalFile(file.path);
+        } catch (uploadError) {
+          console.error("File Upload Error:", uploadError);
+
+          uploadedFiles.forEach((filePath) => cleanupLocalFile(filePath));
+
+          return res.status(400).json({
+            status: "failed",
+            message: "File upload failed",
+            error: uploadError.message,
+          });
+        }
+      }
+    }
+
+    // ==========================
+    // Final Attachments Logic
+    // ==========================
+
+    const finalAttachments = [...parsedExistingAttachments, ...newAttachments];
+
+    // ==========================
+    // Update Data
+    // ==========================
+
+    const updateData = {
+      updateStatus: true,
+    };
+
+    if (typeof content === "string") {
+      updateData.content = content.trim();
+    }
+
+    updateData.attachments = finalAttachments;
+
+    const updatedNote = await credentialNote.findByIdAndUpdate(
+      noteId,
+      {
+        $set: updateData,
+      },
+      {
+        new: true,
+        runValidators: true,
+      },
+    );
+
+    return res.status(200).json({
+      status: "success",
+      message: "Note updated successfully",
+      data: updatedNote,
+    });
+  } catch (error) {
+    console.error("updateNote error:", error);
+
+    uploadedFiles.forEach((filePath) => cleanupLocalFile(filePath));
+
+    return res.status(500).json({
+      status: "failed",
+      message: "Internal Server Error",
+      error: error.message,
     });
   }
 };
