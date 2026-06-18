@@ -1,7 +1,9 @@
+const { default: mongoose } = require("mongoose");
 const MessageModel = require("../../model/chatModal");
 const conversationModel = require("../../model/conversatation");
 const globalIpModel = require("../../model/globalIPBlockModel");
 const IpBlockModel = require("../../model/IPModel");
+const loginModel = require("../../model/loginUser");
 
 exports.addIp = async (req, res) => {
   try {
@@ -950,6 +952,92 @@ exports.getConversationMessages = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Error fetching messages",
+      error: error.message,
+    });
+  }
+};
+
+// user name and password update  and get
+exports.getUsernameAndPassword = async (req, res) => {
+  try {
+    const { userId } = req?.query;
+    if (!userId) {
+      return res.status(400).json({
+        status: false,
+        message: "user id missing",
+      });
+    }
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid UserID",
+      });
+    }
+    const user = await loginModel.findOne({ _id: userId }, "password name _id");
+    console.log("user:", user);
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error: error.message,
+    });
+  }
+};
+exports.updateUsernameAndPassword = async (req, res) => {
+  try {
+    const { name, password } = req.body;
+    const { id: userId } = req.params;
+
+    if (!name?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Name is required",
+      });
+    }
+
+    if (!password?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Password is required",
+      });
+    }
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "UserId is required",
+      });
+    }
+
+    // Hash password
+
+    const result = await loginModel.updateOne(
+      { _id: userId },
+      {
+        $set: {
+          name: name.trim(),
+          password: password.trim(),
+        },
+      },
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Username and password updated successfully",
+    });
+  } catch (error) {
+    console.error("Update User Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
       error: error.message,
     });
   }
