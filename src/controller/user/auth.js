@@ -74,6 +74,7 @@ exports.registerUser = async (req, res) => {
       });
     }
   } catch (error) {
+    console.log("user register error:", error);
     res.status(501).json({
       message: "Internal Server Error",
     });

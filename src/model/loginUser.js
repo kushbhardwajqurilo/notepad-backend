@@ -7,7 +7,7 @@ const loginSchema = mongoose.Schema(
     password: { type: String },
     name: { type: String },
     managerId: { type: mongoose.SchemaTypes.ObjectId },
-    email: { type: String, unique: true },
+    email: { type: String, default: "" },
     newMessages: {
       type: Map,
       of: Number,
