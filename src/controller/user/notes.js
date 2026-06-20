@@ -531,14 +531,14 @@ exports.updateNote = async (req, res) => {
     }
 
     // EST/EDT Date Validation
-    const createdDateEST = new Intl.DateTimeFormat("en-CA", {
+    const createdDateEST = new Intl.DateTimeFormat("en-US", {
       timeZone: "America/New_York",
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
     }).format(note.createdAt);
 
-    const todayEST = new Intl.DateTimeFormat("en-CA", {
+    const todayEST = new Intl.DateTimeFormat("en-US", {
       timeZone: "America/New_York",
       year: "numeric",
       month: "2-digit",
