@@ -1,4 +1,3 @@
-const { default: mongoose } = require("mongoose");
 const {
   cleanupLocalFile,
   deleteFromCloudinary,
@@ -6,6 +5,7 @@ const {
 } = require("../../config/cloudinary");
 const credentialNote = require("../../model/credantialNoteModel");
 const NotesModel = require("../../model/notes");
+const getEasternDayRange = require("../../util/ESTTimezone");
 
 function safeParseAttachments(data) {
   try {
@@ -335,10 +335,9 @@ exports.getNotes = async (req, res) => {
     const user = req.user.id;
     const search = req.query?.search?.trim();
     const date = req.query?.date?.trim();
-    const timezoneOffset = req.query?.timezoneOffset?.trim();
 
     const filter = {
-      userId: new mongoose.Types.ObjectId(user),
+      userId: user,
     };
 
     // Search filter
@@ -361,35 +360,18 @@ exports.getNotes = async (req, res) => {
 
     // Date filter
     if (date) {
-      // console.log("dateeee", date);
-      // const [year, month, day] = date?.split("-").map(Number);
-
-      // const start = new Date(Date.UTC(year, month - 1, day - 1, 18, 30));
-
-      // const end = new Date(Date.UTC(year, month - 1, day, 18, 30));
+      const { startUtc, endUtc } = getEasternDayRange(date);
       // const startDate = new Date(date);
       // const endDate = new Date(date);
-      // startDate.setDate(startDate.getDate() - 1);
+
       // endDate.setDate(endDate.getDate() + 1);
 
-      const [year, month, day] = date.split("-").map(Number);
-
-      // User's midnight
-      const localMidnight = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
-
-      // Convert local midnight to UTC
-      const start = new Date(
-        localMidnight.getTime() + timezoneOffset * 60 * 1000,
-      );
-
-      const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
-
       filter.createdAt = {
-        $gte: start,
-        $lt: end,
+        $gte: startUtc,
+        $lt: endUtc,
       };
-      console.log("date filter", { start, end });
     }
+
     const notes = await NotesModel.find(filter).sort({
       createdAt: -1,
     });
