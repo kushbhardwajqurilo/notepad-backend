@@ -1,3 +1,4 @@
+const { default: mongoose } = require("mongoose");
 const {
   cleanupLocalFile,
   deleteFromCloudinary,
@@ -334,9 +335,10 @@ exports.getNotes = async (req, res) => {
     const user = req.user.id;
     const search = req.query?.search?.trim();
     const date = req.query?.date?.trim();
+    const timezoneOffset = req.query?.timezoneOffset?.trim();
 
     const filter = {
-      userId: user,
+      userId: new mongoose.Types.ObjectId(user),
     };
 
     // Search filter
@@ -359,17 +361,35 @@ exports.getNotes = async (req, res) => {
 
     // Date filter
     if (date) {
-      const startDate = new Date(date);
-      const endDate = new Date(date);
+      // console.log("dateeee", date);
+      // const [year, month, day] = date?.split("-").map(Number);
 
-      endDate.setDate(endDate.getDate() + 1);
+      // const start = new Date(Date.UTC(year, month - 1, day - 1, 18, 30));
+
+      // const end = new Date(Date.UTC(year, month - 1, day, 18, 30));
+      // const startDate = new Date(date);
+      // const endDate = new Date(date);
+      // startDate.setDate(startDate.getDate() - 1);
+      // endDate.setDate(endDate.getDate() + 1);
+
+      const [year, month, day] = date.split("-").map(Number);
+
+      // User's midnight
+      const localMidnight = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+
+      // Convert local midnight to UTC
+      const start = new Date(
+        localMidnight.getTime() + timezoneOffset * 60 * 1000,
+      );
+
+      const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
 
       filter.createdAt = {
-        $gte: startDate,
-        $lt: endDate,
+        $gte: start,
+        $lt: end,
       };
+      console.log("date filter", { start, end });
     }
-
     const notes = await NotesModel.find(filter).sort({
       createdAt: -1,
     });
